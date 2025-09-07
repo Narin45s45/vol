@@ -1,6 +1,7 @@
-name: Test WordPress Standard Connection
+name: Final WordPress Connection Test
 
 on:
+  # این ورک‌فلو فقط به صورت دستی از تب Actions اجرا می‌شود
   workflow_dispatch:
 
 jobs:
@@ -20,7 +21,8 @@ jobs:
 
       - name: Run connection test script
         env:
-          WORDPRESS_URL: ${{ secrets.WORDPRESS_URL }}
-          WORDPRESS_USER: ${{ secrets.WORDPRESS_USER }}
-          WORDPRESS_PASS: ${{ secrets.WORDPRESS_PASS }}
+          # این نام‌ها دقیقاً با نام Secrets شما در گیت‌هاب مطابقت دارند
+          WP_URL: ${{ secrets.WP_URL }}
+          WP_USER: ${{ secrets.WP_USER }}
+          WP_PASSWORD: ${{ secrets.WP_PASSWORD }}
         run: python test_connection.py
