@@ -1,0 +1,27 @@
+name: Test WordPress Connection
+
+on:
+  # این ورک‌فلو فقط به صورت دستی اجرا می‌شود
+  workflow_dispatch:
+
+jobs:
+  test-connection:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Run connection test script
+        env:
+          WORDPRESS_URL: ${{ secrets.WORDPRESS_URL }}
+          WORDPRESS_USER: ${{ secrets.WORDPRESS_USER }}
+          WORDPRESS_PASS: ${{ secrets.WORDPRESS_PASS }}
+        run: python test_connection.py
