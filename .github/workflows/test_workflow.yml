@@ -1,7 +1,6 @@
-name: Test WordPress Connection
+name: Test WordPress Standard Connection
 
 on:
-  # این ورک‌فلو فقط به صورت دستی اجرا می‌شود
   workflow_dispatch:
 
 jobs:
