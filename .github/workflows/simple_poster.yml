@@ -20,14 +20,16 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      # --- بخش اصلاح شده ---
       - name: Run the translation script
         env:
           WP_URL: ${{ secrets.WP_URL }}
           WP_USER: ${{ secrets.WP_USER }}
           WP_PASSWORD: ${{ secrets.WP_PASSWORD }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          RSS_URL: ${{ secrets.RSS_URL }}
-          POST_STATUS: ${{ secrets.POST_STATUS }}
+          SOURCES_CONFIG: ${{ secrets.SOURCES_CONFIG }} # این متغیر جدید جایگزین RSS_URL شد
+        # کلمه کلیدی 'run' در اینجا اضافه شده است
+        run: python main.py
 
       - name: Commit processed items list
         run: |
