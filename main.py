@@ -6,7 +6,8 @@ import json
 
 # --- بخش ۱: بارگذاری تنظیمات ---
 def load_config():
-    # خواندن کانفیگ منابع از یک متغیر JSON
+    # [دیباگ] اضافه شده
+    print("[Debug] Loading configuration from environment variables...")
     sources_json = os.getenv('SOURCES_CONFIG')
     if not sources_json:
         raise ValueError("خطا: متغیر محیطی SOURCES_CONFIG تعریف نشده است.")
@@ -16,13 +17,13 @@ def load_config():
         'wp_user': os.getenv('WP_USER'),
         'wp_password': os.getenv('WP_PASSWORD'),
         'gemini_api_key': os.getenv('GEMINI_API_KEY'),
-        'post_status': 'publish', # همانطور که خواستید، وضعیت روی انتشار مستقیم تنظیم شده
+        'post_status': 'publish',
         'sources': json.loads(sources_json)
     }
-    # بررسی اینکه آیا متغیرهای اصلی تعریف شده‌اند
     for key in ['wp_url', 'wp_user', 'wp_password', 'gemini_api_key']:
         if not config[key]:
             raise ValueError(f"خطا: متغیر محیطی {key} تعریف نشده است.")
+    print("[Debug] Configuration loaded successfully.")
     return config
 
 # --- بخش ۲: مدیریت آیتم‌های تکراری ---
@@ -38,25 +39,21 @@ def save_processed_item(item_link):
     with open(PROCESSED_ITEMS_FILE, 'a', encoding='utf-8') as f:
         f.write(item_link + '\n')
 
-# --- بخش ۳: ترجمه ساده با Gemini ---
+# --- بخش ۳: ترجمه با Gemini ---
 def translate_content_with_gemini(api_key, title, html_content):
-    print(f"  -> Translating: {title}")
+    print(f"  -> [Debug] Sending to Gemini for translation: {title[:30]}...")
     genai.configure(api_key=api_key)
     model = genai.GenerativeModel('gemini-1.5-flash-latest')
-    
     prompt = f"""
     Translate the following HTML content and its title to fluent Persian.
-    Preserve the original HTML structure, including all tags like <iframe>, <p>, <img>, and <a>, as much as possible.
-    Return the output ONLY in JSON format with two keys: "translated_title" and "translated_content".
-
-    Original Title:
-    {title}
-
-    Original HTML Content:
-    {html_content}
+    Preserve the original HTML structure. Return the output ONLY in JSON format 
+    with two keys: "translated_title" and "translated_content".
+    Original Title: {title}
+    Original HTML Content: {html_content}
     """
     try:
         response = model.generate_content(prompt)
+        print("  -> [Debug] Received response from Gemini.")
         return json.loads(response.text.strip().replace('```json', '').replace('```', ''))
     except Exception as e:
         print(f"  [Error] Gemini API call failed: {e}")
@@ -66,22 +63,29 @@ def translate_content_with_gemini(api_key, title, html_content):
 def get_or_create_category_id(config, auth, category_name, category_slug):
     cat_api_url = f"{config['wp_url']}/wp-json/wp/v2/categories"
     
+    # [دیباگ] اضافه شده
+    print(f"[Debug] Checking for category '{category_slug}' at {cat_api_url}")
     try:
-        response = requests.get(cat_api_url, params={'slug': category_slug}, auth=auth)
+        response = requests.get(cat_api_url, params={'slug': category_slug}, auth=auth, timeout=20)
         response.raise_for_status()
         data = response.json()
         if data:
-            return data[0]['id']
-    except requests.exceptions.RequestException:
-        pass
+            cat_id = data[0]['id']
+            print(f"  [Debug] Category '{category_slug}' found with ID: {cat_id}")
+            return cat_id
+    except requests.exceptions.RequestException as e:
+        print(f"  [Warning] Could not check for category, will try to create. Reason: {e}")
 
-    print(f"  [Info] Category '{category_slug}' not found. Creating it...")
+    print(f"  [Debug] Category '{category_slug}' not found or check failed. Attempting to create...")
     try:
-        response = requests.post(cat_api_url, auth=auth, json={'name': category_name, 'slug': category_slug})
+        response = requests.post(cat_api_url, auth=auth, json={'name': category_name, 'slug': category_slug}, timeout=20)
         response.raise_for_status()
-        return response.json()['id']
+        cat_id = response.json()['id']
+        print(f"  [Success] Category '{category_slug}' created with ID: {cat_id}")
+        return cat_id
     except requests.exceptions.RequestException as e:
         print(f"  [Error] Failed to create category '{category_slug}': {e}")
+        if e.response: print(f"  [Debug] Response Body: {e.response.text}")
         return None
 
 def post_to_wordpress(config, auth, data, category_id):
@@ -96,14 +100,16 @@ def post_to_wordpress(config, auth, data, category_id):
     
     headers = {'Content-Type': 'application/json'}
     
+    # [دیباگ] اضافه شده
+    print(f"  -> [Debug] Attempting to POST to WordPress: {data['translated_title'][:30]}...")
     try:
         response = requests.post(api_url, auth=auth, headers=headers, json=post_data, timeout=30)
         response.raise_for_status()
-        print(f"  [Success] Post '{data['translated_title']}' created successfully.")
+        print(f"  [Success] Post created successfully in WordPress.")
         return True
     except requests.exceptions.RequestException as e:
         print(f"  [Error] Failed to post to WordPress: {e}")
-        if e.response: print(f"  Response Body: {e.response.text}")
+        if e.response: print(f"  [Debug] Response Body: {e.response.text}")
         return False
 
 # --- بخش ۵: منطق اصلی برنامه ---
@@ -114,27 +120,33 @@ def main():
         print(e)
         return
 
-    print("--- Starting Multi-Source Feed Translator Script ---")
+    print("\n--- Starting Multi-Source Feed Translator Script (Debug Mode) ---")
     
     auth = (config['wp_user'], config['wp_password'])
+    
+    # [دیباگ] اضافه شده
+    print("\n[Phase 1: Category Setup]")
     game_category_id = get_or_create_category_id(config, auth, 'بازی', 'game')
     if not game_category_id:
         print("[Fatal] Could not secure 'game' category ID. Aborting.")
         return
+    print("[Phase 1: Complete]\n")
 
     processed_items = get_processed_items()
     
-    # حلقه اصلی برای پردازش تمام منابع خبری
+    print("[Phase 2: Processing Feeds]")
     for source in config['sources']:
         source_name = source['name']
         rss_url = source['rss_url']
         print(f"\n--- Processing Source: {source_name} ---")
-        print(f"Fetching RSS feed from: {rss_url}")
         
+        # [دیباگ] اضافه شده
+        print(f"[Debug] Fetching RSS feed from: {rss_url}")
         feed = feedparser.parse(rss_url)
         if feed.bozo:
-            print(f"  [Warning] Error reading RSS feed for {source_name}: {feed.bozo_exception}")
+            print(f"  [Warning] Error reading RSS feed: {feed.bozo_exception}")
             continue
+        print(f"[Debug] Found {len(feed.entries)} items in the feed.")
             
         for entry in reversed(feed.entries):
             item_link = entry.get('link')
@@ -145,14 +157,9 @@ def main():
                 
             print(f"\nProcessing new item: {item_title}")
             
-            content = ""
-            if 'content' in entry:
-                content = entry.content[0].value
-            elif 'summary' in entry:
-                content = entry.summary
-            
+            content = entry.get('content', [{}])[0].get('value', entry.get('summary', ''))
             if not content:
-                print("  [Warning] No content found in feed item. Skipping.")
+                print("  [Warning] No content found. Skipping.")
                 save_processed_item(item_link)
                 continue
 
@@ -164,6 +171,7 @@ def main():
             if post_to_wordpress(config, auth, translated_data, game_category_id):
                 save_processed_item(item_link)
 
+    print("\n[Phase 2: Complete]")
     print("\n--- Script finished. ---")
 
 if __name__ == "__main__":
