@@ -20,13 +20,13 @@ def load_config():
         if not config[key]: raise ValueError(f"خطا: متغیر محیطی {key.upper()} تعریف نشده است.")
     credentials = f"{config['wp_user']}:{config['wp_password']}"
     token = base64.b64encode(credentials.encode()).decode('utf-8')
-    config['wp_headers'] = { 'Authorization': f'Basic {token}', 'Content-Type': 'application/json', 'User-Agent': 'Python-Final-JSON-Bot/1.0' }
+    config['wp_headers'] = { 'Authorization': f'Basic {token}', 'Content-Type': 'application/json', 'User-Agent': 'Python-Final-Bot/1.0' }
     return config
 
-# --- تابع نهایی برای استخراج ویدیو از داده‌های JSON صفحه ---
-def get_video_embed_from_page_data(page_url):
-    """به صفحه وب مراجعه کرده، داده‌های JSON آن را تحلیل و لینک embed را استخراج می‌کند."""
-    print(f"  -> Scraping page to find video data from JSON: {page_url}")
+# --- تابع نهایی برای استخراج ویدیو ---
+def get_video_embed_from_page(page_url):
+    """به صفحه وب مراجعه کرده، شناسه ویدیو را پیدا کرده و کد embed را می‌سازد."""
+    print(f"  -> Scraping page to find video identifier: {page_url}")
     video_html = ""
     try:
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
@@ -34,29 +34,23 @@ def get_video_embed_from_page_data(page_url):
         response.raise_for_status()
         soup = BeautifulSoup(response.text, 'html.parser')
         
-        # ۱. پیدا کردن تگ اسکریپت که حاوی تمام داده‌های صفحه است
-        next_data_script = soup.find('script', id='__NEXT_DATA__')
+        # ۱. پیدا کردن تگ ویدیو که دارای شناسه (identifier) است
+        video_tag = soup.find('video', attrs={'identifier': True})
         
-        if not next_data_script:
-            print("  [Warning] '__NEXT_DATA__' script tag not found.")
-            return ""
-
-        # ۲. تبدیل محتوای تگ به JSON
-        page_data = json.loads(next_data_script.string)
-        
-        # ۳. جستجو در ساختار JSON برای پیدا کردن ID ویدیو
-        # این مسیر ممکن است در آینده تغییر کند، اما در حال حاضر صحیح است
-        video_id = page_data.get('props', {}).get('pageProps', {}).get('apolloState', {}).get('ROOT_QUERY', {}).get('video', {}).get('id')
-        
-        if video_id:
-            print(f"  [Success] Found video ID from page JSON: {video_id}")
+        if video_tag:
+            video_id = video_tag['identifier']
+            print(f"  [Success] Found video identifier: {video_id}")
+            
+            # ۲. ساخت لینک Embed واقعی با استفاده از شناسه
             embed_url = f"https://www.ign.com/videos/embed?id={video_id}"
+            
+            # ۳. ساخت کد کامل iframe
             video_html = f'<div style="position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden; max-width: 100%; height: auto;"><iframe src="{embed_url}" width="100%" height="100%" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;" frameborder="0" scrolling="no" allowfullscreen="true"></iframe></div>'
         else:
-            print("  [Warning] Could not find video ID within the page's JSON data.")
+            print("  [Warning] Video tag with identifier not found on the page.")
 
     except Exception as e:
-        print(f"  [Error] Failed to get video embed from page data: {e}")
+        print(f"  [Error] Failed to get video embed: {e}")
     
     return video_html
 
@@ -81,7 +75,7 @@ def main():
     except Exception as e:
         print(f"[Fatal Error] {e}"); return
 
-    print("\n--- Starting Final Video Extractor Script (JSON Method) ---")
+    print("\n--- Starting Final Video Extractor Script ---")
     
     source = config['sources'][0]
     rss_url = source['rss_url']
@@ -100,8 +94,8 @@ def main():
         
     print(f"\nProcessing the latest item: {item_title}")
     
-    # استخراج ویدیو با روش جدید و پایدار (تحلیل JSON)
-    video_html = get_video_embed_from_page_data(item_link)
+    # استخراج ویدیو با روش جدید و پایدار
+    video_html = get_video_embed_from_page(item_link)
     
     if not video_html:
         # اگر روش اصلی شکست خورد، از عکس بندانگشتی استفاده کن
