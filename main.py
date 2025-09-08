@@ -4,13 +4,7 @@ import feedparser
 import json
 import base64
 import hashlib
-import time
 from bs4 import BeautifulSoup
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options as ChromeOptions
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
 
 # --- (بخش ۱: بارگذاری تنظیمات - بدون تغییر) ---
 def load_config():
@@ -26,50 +20,47 @@ def load_config():
         if not config[key]: raise ValueError(f"خطا: متغیر محیطی {key.upper()} تعریف نشده است.")
     credentials = f"{config['wp_user']}:{config['wp_password']}"
     token = base64.b64encode(credentials.encode()).decode('utf-8')
-    config['wp_headers'] = { 'Authorization': f'Basic {token}', 'Content-Type': 'application/json', 'User-Agent': 'Python-Selenium-Bot/2.0' }
+    config['wp_headers'] = { 'Authorization': f'Basic {token}', 'Content-Type': 'application/json', 'User-Agent': 'Python-Fast-API-Bot/1.0' }
     return config
 
-# --- تابع استخراج ویدیو (با تغییر کوچک) ---
-def get_video_embed_with_selenium(page_url):
-    print(f"  -> Launching Selenium browser to scrape: {page_url}")
+# --- تابع جدید و سریع برای استخراج ویدیو از API ---
+def get_video_embed_from_api(page_url):
+    """به صفحه وب مراجعه کرده، شناسه ویدیو را پیدا کرده و از API اطلاعات آن را می‌گیرد."""
+    print(f"  -> Scraping page to find video identifier: {page_url}")
     video_html = ""
-    
-    options = ChromeOptions()
-    options.add_argument("--headless")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/98.0.4758.102 Safari/537.36")
-
     try:
-        # --- تغییر اصلی: دیگر نیازی به webdriver-manager نیست ---
-        # Action گیت‌هاب درایور را به صورت خودکار در مسیر قرار می‌دهد
-        driver = webdriver.Chrome(options=options)
+        # ۱. اسکرپ کردن صفحه برای پیدا کردن شناسه ویدیو
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
+        response = requests.get(page_url, headers=headers, timeout=30)
+        response.raise_for_status()
+        soup = BeautifulSoup(response.text, 'html.parser')
         
-        driver.get(page_url)
+        # شناسه معمولاً در تگ ویدیو یا یک اسکریپت قرار دارد
+        video_tag = soup.find('video', attrs={'identifier': True})
+        if not video_tag:
+             print("  [Warning] Video tag with identifier not found. Cannot create embed.")
+             return ""
+
+        video_id = video_tag['identifier']
+        print(f"  [Info] Found video identifier (UUID): {video_id}")
+
+        # ۲. ساخت لینک Embed واقعی با استفاده از شناسه
+        # این یک الگوی استاندارد برای پلیرهای مدرن است
+        embed_url = f"https://www.ign.com/videos/embed?id={video_id}"
         
-        wait = WebDriverWait(driver, 15) # زمان انتظار را کمی بیشتر می‌کنیم
-        meta_tag = wait.until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, "meta[property='og:video:url']"))
-        )
-        
-        embed_url = meta_tag.get_attribute('content')
-        if embed_url:
-            print(f"  [Success] Found real video embed URL via Selenium: {embed_url}")
-            video_html = f'<div style="position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden; max-width: 100%; height: auto;"><iframe src="{embed_url}" width="100%" height="100%" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;" frameborder="0" scrolling="no" allowfullscreen="true"></iframe></div>'
-        
+        print(f"  [Success] Constructed the final embed URL: {embed_url}")
+        video_html = f'<div style="position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden; max-width: 100%; height: auto;"><iframe src="{embed_url}" width="100%" height="100%" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;" frameborder="0" scrolling="no" allowfullscreen="true"></iframe></div>'
+
     except Exception as e:
-        print(f"  [Error] Selenium failed to extract video embed: {e}")
-    finally:
-        if 'driver' in locals():
-            driver.quit()
-            
+        print(f"  [Error] Failed to get video embed: {e}")
+    
     return video_html
 
-# --- (بقیه توابع و منطق اصلی برنامه بدون تغییر باقی می‌مانند) ---
+# --- (بخش ارسال پست به وردپرس - بدون تغییر) ---
 def post_to_wordpress_custom_api(config, title, content):
     api_url = f"{config['wp_url']}/wp-json/my-poster/v1/create"
     slug = hashlib.sha1(title.encode('utf-8')).hexdigest()[:12]
-    post_data = { "title": f"[VIDEO-Selenium] {title}", "content": content, "slug": f"video-selenium-{slug}", "category_id": 80 }
+    post_data = { "title": f"[Final Video] {title}", "content": content, "slug": f"final-video-{slug}", "category_id": 80 }
     print(f"  -> Posting to WordPress...")
     try:
         response = requests.post(api_url, headers=config['wp_headers'], json=post_data, timeout=90)
@@ -79,13 +70,14 @@ def post_to_wordpress_custom_api(config, title, content):
     except requests.exceptions.RequestException as e:
         if e.response: print(f"  [Debug] Response Body: {e.response.text}"); return False
 
+# --- بخش اصلی برنامه ---
 def main():
     try:
         config = load_config()
     except Exception as e:
         print(f"[Fatal Error] {e}"); return
 
-    print("\n--- Starting Selenium Video Extractor Script (Optimized) ---")
+    print("\n--- Starting Fast Video Extractor Script ---")
     
     source = config['sources'][0]
     rss_url = source['rss_url']
@@ -104,8 +96,10 @@ def main():
         
     print(f"\nProcessing the latest item: {item_title}")
     
-    video_html = get_video_embed_with_selenium(item_link)
+    # استخراج ویدیو با روش سریع
+    video_html = get_video_embed_from_api(item_link)
     
+    # اگر روش سریع شکست خورد، از عکس بندانگشتی استفاده کن
     if not video_html and 'media_thumbnail' in latest_entry and latest_entry.media_thumbnail:
         image_url = latest_entry.media_thumbnail[0].get('url')
         if image_url:
