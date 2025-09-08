@@ -1,4 +1,4 @@
-name: Selenium Video Poster
+name: Fast Video Poster
 
 on:
   workflow_dispatch:
@@ -14,12 +14,6 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      
-      # --- مرحله جدید و بهینه شده: نصب خودکار کروم و درایور ---
-      - name: Set up Chrome
-        uses: browser-actions/setup-chrome@latest
-        with:
-          chrome-version: stable
 
       - name: Install dependencies
         run: pip install -r requirements.txt
