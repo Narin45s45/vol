@@ -7,8 +7,7 @@ import hashlib
 import time
 from bs4 import BeautifulSoup
 from selenium import webdriver
-from selenium.webdriver.chrome.service import Service as ChromeService
-from webdriver_manager.chrome import ChromeDriverManager
+from selenium.webdriver.chrome.options import Options as ChromeOptions
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -27,29 +26,28 @@ def load_config():
         if not config[key]: raise ValueError(f"خطا: متغیر محیطی {key.upper()} تعریف نشده است.")
     credentials = f"{config['wp_user']}:{config['wp_password']}"
     token = base64.b64encode(credentials.encode()).decode('utf-8')
-    config['wp_headers'] = { 'Authorization': f'Basic {token}', 'Content-Type': 'application/json', 'User-Agent': 'Python-Selenium-Bot/1.0' }
+    config['wp_headers'] = { 'Authorization': f'Basic {token}', 'Content-Type': 'application/json', 'User-Agent': 'Python-Selenium-Bot/2.0' }
     return config
 
-# --- تابع جدید و نهایی برای استخراج ویدیو با Selenium ---
+# --- تابع استخراج ویدیو (با تغییر کوچک) ---
 def get_video_embed_with_selenium(page_url):
-    """با استفاده از Selenium یک مرورگر واقعی را کنترل کرده و لینک ویدیو را استخراج می‌کند."""
     print(f"  -> Launching Selenium browser to scrape: {page_url}")
     video_html = ""
     
-    # تنظیمات مرورگر کروم برای اجرا در محیط سرور (گیت‌هاب)
-    options = webdriver.ChromeOptions()
-    options.add_argument("--headless")  # اجرای بدون رابط گرافیکی
+    options = ChromeOptions()
+    options.add_argument("--headless")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/98.0.4758.102 Safari/537.36")
 
     try:
-        # نصب و راه‌اندازی خودکار درایور کروم
-        driver = webdriver.Chrome(service=ChromeService(ChromeDriverManager().install()), options=options)
+        # --- تغییر اصلی: دیگر نیازی به webdriver-manager نیست ---
+        # Action گیت‌هاب درایور را به صورت خودکار در مسیر قرار می‌دهد
+        driver = webdriver.Chrome(options=options)
+        
         driver.get(page_url)
         
-        # انتظار هوشمند: تا ۱۰ ثانیه صبر می‌کند تا متا تگ ویدیو در صفحه بارگذاری شود
-        wait = WebDriverWait(driver, 10)
+        wait = WebDriverWait(driver, 15) # زمان انتظار را کمی بیشتر می‌کنیم
         meta_tag = wait.until(
             EC.presence_of_element_located((By.CSS_SELECTOR, "meta[property='og:video:url']"))
         )
@@ -58,18 +56,16 @@ def get_video_embed_with_selenium(page_url):
         if embed_url:
             print(f"  [Success] Found real video embed URL via Selenium: {embed_url}")
             video_html = f'<div style="position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden; max-width: 100%; height: auto;"><iframe src="{embed_url}" width="100%" height="100%" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;" frameborder="0" scrolling="no" allowfullscreen="true"></iframe></div>'
-        else:
-            print("  [Warning] Meta tag was found, but it has no content.")
-
+        
     except Exception as e:
         print(f"  [Error] Selenium failed to extract video embed: {e}")
     finally:
         if 'driver' in locals():
-            driver.quit() # بستن مرورگر برای جلوگیری از مصرف منابع
+            driver.quit()
             
     return video_html
 
-# --- (بخش ارسال پست به وردپرس - بدون تغییر) ---
+# --- (بقیه توابع و منطق اصلی برنامه بدون تغییر باقی می‌مانند) ---
 def post_to_wordpress_custom_api(config, title, content):
     api_url = f"{config['wp_url']}/wp-json/my-poster/v1/create"
     slug = hashlib.sha1(title.encode('utf-8')).hexdigest()[:12]
@@ -83,14 +79,13 @@ def post_to_wordpress_custom_api(config, title, content):
     except requests.exceptions.RequestException as e:
         if e.response: print(f"  [Debug] Response Body: {e.response.text}"); return False
 
-# --- بخش اصلی برنامه ---
 def main():
     try:
         config = load_config()
     except Exception as e:
         print(f"[Fatal Error] {e}"); return
 
-    print("\n--- Starting Selenium Video Extractor Script ---")
+    print("\n--- Starting Selenium Video Extractor Script (Optimized) ---")
     
     source = config['sources'][0]
     rss_url = source['rss_url']
@@ -109,10 +104,8 @@ def main():
         
     print(f"\nProcessing the latest item: {item_title}")
     
-    # استخراج ویدیو با Selenium
     video_html = get_video_embed_with_selenium(item_link)
     
-    # اگر Selenium شکست خورد، به عنوان جایگزین از عکس استفاده کن
     if not video_html and 'media_thumbnail' in latest_entry and latest_entry.media_thumbnail:
         image_url = latest_entry.media_thumbnail[0].get('url')
         if image_url:
