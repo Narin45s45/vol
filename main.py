@@ -5,7 +5,7 @@ import json
 import base64
 import hashlib
 
-# --- (بخش ۱: بارگذاری تنظیمات - بدون تغییر) ---
+# --- بخش ۱: بارگذاری تنظیمات ---
 def load_config():
     sources_json = os.getenv('SOURCES_CONFIG')
     if not sources_json:
@@ -24,32 +24,34 @@ def load_config():
     config['wp_headers'] = {
         'Authorization': f'Basic {token}',
         'Content-Type': 'application/json',
-        'User-Agent': 'Python-Raw-Feed-Bot/3.0'
+        'User-Agent': 'Python-Final-Test-Bot/1.0'
     }
     return config
 
-# --- (بخش ۲: ارسال پست به وردپرس - بدون تغییر) ---
+# --- بخش ۲: ارسال پست به وردپرس ---
 def post_to_wordpress_custom_api(config, title, content):
     api_url = f"{config['wp_url']}/wp-json/my-poster/v1/create"
     slug = hashlib.sha1(title.encode('utf-8')).hexdigest()[:12]
     post_data = {
-        "title": f"[RAW FEED TEST] {title}",
+        "title": f"[Image Test] {title}",
         "content": content,
-        "slug": f"raw-feed-test-{slug}",
+        "slug": f"image-test-{slug}",
         "category_id": 80
     }
-    print(f"  -> [Info] Posting raw content to WordPress: {title}")
+    print(f"  -> [Info] Posting to WordPress: {title}")
     try:
         response = requests.post(api_url, headers=config['wp_headers'], json=post_data, timeout=90)
         response.raise_for_status()
-        print(f"  [Success] Raw test post created successfully.")
+        print(f"  [Success] Test post created successfully.")
+        # در لاگ، لینک پست ایجاد شده را نمایش می‌دهیم
+        print(f"  [Info] New Post URL: {response.json().get('url', 'N/A')}")
         return True
     except requests.exceptions.RequestException as e:
         print(f"  [Error] Failed to post to WordPress: {e}")
         if e.response: print(f"  [Debug] Response Body: {e.response.text}")
         return False
 
-# --- بخش ۳: منطق اصلی برنامه (با تغییر کلیدی) ---
+# --- بخش ۳: منطق اصلی برنامه ---
 def main():
     try:
         config = load_config()
@@ -57,9 +59,7 @@ def main():
         print(f"[Fatal Error] {e}")
         return
 
-    print("\n--- Starting Pure Raw Feed Poster (Corrected Content Extraction) ---")
-    
-    # در حالت تست، حافظه را در نظر نمی‌گیریم
+    print("\n--- Starting Image Extraction Test (No Translation, No BeautifulSoup) ---")
     
     source = config['sources'][0]
     rss_url = source['rss_url']
@@ -74,22 +74,20 @@ def main():
     item_title = latest_entry.get('title', 'No Title')
     print(f"\nProcessing the latest item: {item_title}")
     
-    # --- تغییر کلیدی و مهم اینجا اتفاق افتاده است ---
-    # این کد جدید همیشه به دنبال غنی‌ترین محتوای ممکن می‌گردد
-    raw_content = ""
-    if 'content' in latest_entry and latest_entry.content:
-        # اولویت با 'content' است چون معمولاً کامل‌ترین HTML را دارد
-        raw_content = latest_entry.content[0].value
-    elif 'summary' in latest_entry:
-        # اگر 'content' نبود، به سراغ 'summary' می‌رویم
-        raw_content = latest_entry.summary
+    text_content = latest_entry.get('summary', '')
+    image_html = ""
     
-    if not raw_content:
-        print("  [Warning] No content found in this item. Exiting.")
-        return
-        
-    print(f"  [Info] Successfully extracted raw content (length: {len(raw_content)}).")
-    post_to_wordpress_custom_api(config, item_title, raw_content)
+    if 'media_thumbnail' in latest_entry and latest_entry.media_thumbnail:
+        image_url = latest_entry.media_thumbnail[0].get('url')
+        if image_url:
+            # ساخت کد HTML عکس به صورت دستی
+            image_html = f'<p><img src="{image_url}" alt="{item_title}" style="max-width:100%; height:auto;" /></p>'
+            print(f"  [Info] Found and created HTML for media thumbnail: {image_url}")
+
+    # ترکیب عکس و متن
+    final_content = image_html + text_content
+    
+    post_to_wordpress_custom_api(config, item_title, final_content)
 
     print("\n--- Script finished. ---")
 
