@@ -30,13 +30,11 @@ def load_config():
         'Content-Type': 'application/json',
         'User-Agent': 'Python-News-Bot/Final'
     }
-    print("[Debug] Configuration and Auth Headers loaded successfully.")
     return config
 
 # --- (بخش ۲: مدیریت آیتم‌های تکراری - بدون تغییر) ---
 def get_processed_items_from_wp(config):
     api_url = f"{config['wp_url']}/wp-json/my-poster/v1/processed-links"
-    print(f"[Debug] Getting processed links from: {api_url}")
     try:
         response = requests.get(api_url, headers=config['wp_headers'], timeout=60)
         response.raise_for_status()
@@ -48,7 +46,6 @@ def get_processed_items_from_wp(config):
 def save_processed_item_to_wp(config, item_link):
     api_url = f"{config['wp_url']}/wp-json/my-poster/v1/processed-links"
     payload = {"link": item_link}
-    print(f"  -> [Debug] Saving processed link to WordPress: {item_link}")
     try:
         response = requests.post(api_url, headers=config['wp_headers'], json=payload, timeout=60)
         response.raise_for_status()
@@ -57,38 +54,28 @@ def save_processed_item_to_wp(config, item_link):
         print(f"  [Error] Failed to save processed link to WordPress: {e}")
         return False
 
-# --- تابع جدید برای پردازش هوشمند ویدیو ---
+# --- (بخش extract_and_process_video - بدون تغییر) ---
 def extract_and_process_video(html_content):
-    """
-    کد ویدیو را پیدا کرده، آن را از متن اصلی جدا می‌کند و متن تمیز شده را برمی‌گرداند.
-    """
     if not html_content:
         return "", ""
-        
     soup = BeautifulSoup(html_content, 'html.parser')
-    
-    # اول به دنبال iframe می‌گردیم (برای ویدیوهای Embed)
     video_iframe = soup.find('iframe')
     if video_iframe:
         video_code = str(video_iframe)
-        video_iframe.decompose() # iframe را از متن اصلی حذف می‌کنیم
+        video_iframe.decompose()
         print("  [Debug] Found and extracted an iframe video embed.")
         return video_code, str(soup)
-
-    # اگر iframe نبود، به دنبال تگ ویدیو می‌گردیم
     video_tag = soup.find('video')
     if video_tag:
         video_code = str(video_tag)
-        video_tag.decompose() # تگ ویدیو را از متن اصلی حذف می‌کنیم
+        video_tag.decompose()
         print("  [Debug] Found and extracted a <video> tag.")
         return video_code, str(soup)
-        
     print("  [Debug] No video iframe or tag found in the content.")
-    return "", html_content # اگر ویدیویی پیدا نشد، متن اصلی را برمی‌گردانیم
+    return "", html_content
 
-# --- بخش ۳: ترجمه با Gemini (بدون تغییر) ---
+# --- (بخش ۳: ترجمه با Gemini - بدون تغییر) ---
 def translate_with_gemini(api_key, title, content):
-    print(f"  -> [Debug] Translating: {title[:40]}...")
     genai.configure(api_key=api_key)
     model = genai.GenerativeModel('gemini-1.5-flash-latest')
     prompt = f"""
@@ -105,22 +92,17 @@ def translate_with_gemini(api_key, title, content):
         print(f"  [Error] Gemini API call failed: {e}")
         return None
 
-# --- بخش ۴: ارسال پست به وردپرس (با تغییر) ---
+# --- (بخش ۴: ارسال پست به وردپرس - بدون تغییر) ---
 def post_to_wordpress_custom_api(config, data, video_html):
     api_url = f"{config['wp_url']}/wp-json/my-poster/v1/create"
     slug = hashlib.sha1(data['translated_title'].encode('utf-8')).hexdigest()[:12]
-
-    # --- تغییر جدید: کد ویدیو را به ابتدای محتوای ترجمه شده اضافه می‌کنیم ---
     final_content = video_html + data['translated_content']
-
     post_data = {
         "title": data['translated_title'],
         "content": final_content,
         "slug": f"news-{slug}",
         "category_id": 80
     }
-    
-    print(f"  -> [Debug] Posting to custom API endpoint...")
     try:
         response = requests.post(api_url, headers=config['wp_headers'], json=post_data, timeout=90)
         response.raise_for_status()
@@ -139,10 +121,9 @@ def main():
         print(f"[Fatal Error] {e}")
         return
 
-    print("\n--- Starting Final News Aggregator Script ---")
+    print("\n--- Starting Final News Aggregator Script (Final Debug) ---")
     
     processed_items = get_processed_items_from_wp(config)
-    print(f"Loaded {len(processed_items)} processed links from WordPress.")
     
     for source in config['sources']:
         source_name = source['name']
@@ -174,7 +155,12 @@ def main():
                 save_processed_item_to_wp(config, item_link)
                 continue
             
-            # --- تغییر جدید: استخراج ویدیو قبل از ترجمه ---
+            # --- خط دیباگ جدید ---
+            # این خط محتوای خامی که از فید گرفته شده را چاپ می‌کند
+            print("==================== RAW FEED CONTENT START ====================")
+            print(content_from_feed)
+            print("==================== RAW FEED CONTENT END ======================")
+            
             video_code, text_content_to_translate = extract_and_process_video(content_from_feed)
 
             translated_data = translate_with_gemini(config['gemini_api_key'], item_title, text_content_to_translate)
@@ -186,6 +172,9 @@ def main():
                 save_processed_item_to_wp(config, item_link)
 
             time.sleep(5)
+            # برای اینکه فقط یک پست را برای دیباگ بررسی کنیم، از حلقه خارج می‌شویم
+            print("\n[Debug] Halting after one item for analysis.")
+            return
 
     print("\n--- Script finished. ---")
 
