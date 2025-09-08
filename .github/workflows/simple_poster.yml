@@ -2,8 +2,8 @@ name: Automatic News Poster
 
 on:
   # اجرای خودکار هر ساعت یک بار
-  schedule:
-    - cron: '0 * * * *'
+ # schedule:
+  #  - cron: '0 * * * *'
   
   # اجازه اجرای دستی از تب Actions
   workflow_dispatch:
