@@ -15,11 +15,11 @@ jobs:
         with:
           python-version: '3.11'
       
-      # --- مرحله جدید: نصب گوگل کروم ---
-      - name: Install Google Chrome
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y google-chrome-stable
+      # --- مرحله جدید و بهینه شده: نصب خودکار کروم و درایور ---
+      - name: Set up Chrome
+        uses: browser-actions/setup-chrome@latest
+        with:
+          chrome-version: stable
 
       - name: Install dependencies
         run: pip install -r requirements.txt
