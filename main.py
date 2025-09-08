@@ -19,8 +19,7 @@ def load_config():
         'wp_password': os.getenv('WP_PASSWORD'),
         'gemini_api_key': os.getenv('GEMINI_API_KEY'),
         'sources': json.loads(sources_json),
-        # --- تغییر اصلی: ذخیره‌سازی به صورت ثابت غیرفعال شده است ---
-        'save_processed_links': False
+        'save_processed_links': False # حالت تست: ذخیره‌سازی غیرفعال
     }
     for key in ['wp_url', 'wp_user', 'wp_password', 'gemini_api_key']:
         if not config[key]:
@@ -37,11 +36,9 @@ def load_config():
 
 # --- بخش ۲: مدیریت آیتم‌های تکراری ---
 def get_processed_items_from_wp(config):
-    # --- تغییر اصلی: اگر ذخیره‌سازی غیرفعال باشد، همیشه لیست خالی برمی‌گرداند ---
     if not config['save_processed_links']:
         print("[Debug] Link saving is disabled. Returning empty list for processed items.")
         return set()
-        
     api_url = f"{config['wp_url']}/wp-json/my-poster/v1/processed-links"
     try:
         response = requests.get(api_url, headers=config['wp_headers'], timeout=60)
@@ -52,11 +49,9 @@ def get_processed_items_from_wp(config):
         raise
 
 def save_processed_item_to_wp(config, item_link):
-    # --- تغییر اصلی: اگر ذخیره‌سازی غیرفعال باشد، هیچ کاری انجام نمی‌دهد ---
     if not config['save_processed_links']:
         print(f"  -> [Debug] Link saving is disabled. Skipping save for: {item_link}")
         return True
-
     api_url = f"{config['wp_url']}/wp-json/my-poster/v1/processed-links"
     payload = {"link": item_link}
     try:
@@ -67,7 +62,7 @@ def save_processed_item_to_wp(config, item_link):
         print(f"  [Error] Failed to save processed link to WordPress: {e}")
         return False
 
-# --- (سایر توابع مانند ترجمه و ارسال پست بدون تغییر باقی می‌مانند) ---
+# --- بخش ۳: پردازش ویدیو ---
 def extract_and_process_video(html_content):
     if not html_content: return "", ""
     soup = BeautifulSoup(html_content, 'html.parser')
@@ -80,11 +75,38 @@ def extract_and_process_video(html_content):
     print("  [Debug] No video iframe found in the content.")
     return "", html_content
 
+# --- بخش ۴: ترجمه با Gemini ---
 def translate_with_gemini(api_key, title, content):
     print(f"  -> [Debug] Translating: {title[:40]}...")
-    genai.configure(api_e, 'application/json'}
+    genai.configure(api_key=api_key) # <--- این خط اصلاح شد
+    model = genai.GenerativeModel('gemini-1.5-flash-latest')
+    prompt = f"""
+    Translate the following HTML content and its title to fluent Persian.
+    Preserve the original HTML structure as much as possible, but remove any remaining script tags.
+    Return the output ONLY in JSON format with two keys: "translated_title" and "translated_content".
+    Original Title: {title}
+    Original HTML Content: {content}
+    """
     try:
-        response = requests.post(api_url, headers=headers, json=post_data, timeout=90)
+        response = model.generate_content(prompt)
+        return json.loads(response.text.strip().replace('```json', '').replace('```', ''))
+    except Exception as e:
+        print(f"  [Error] Gemini API call failed: {e}")
+        return None
+
+# --- بخش ۵: ارسال پست به وردپرس ---
+def post_to_wordpress_custom_api(config, data, video_html):
+    api_url = f"{config['wp_url']}/wp-json/my-poster/v1/create"
+    slug = hashlib.sha1(data['translated_title'].encode('utf-8')).hexdigest()[:12]
+    final_content = video_html + data['translated_content']
+    post_data = {
+        "title": data['translated_title'],
+        "content": final_content,
+        "slug": f"news-{slug}",
+        "category_id": 80
+    }
+    try:
+        response = requests.post(api_url, headers=config['wp_headers'], json=post_data, timeout=90)
         response.raise_for_status()
         print(f"  [Success] Post '{data['translated_title']}' created successfully.")
         return True
@@ -93,7 +115,7 @@ def translate_with_gemini(api_key, title, content):
         if e.response: print(f"  [Debug] Response Body: {e.response.text}")
         return False
 
-# --- بخش ۵: منطق اصلی برنامه ---
+# --- بخش ۶: منطق اصلی برنامه ---
 def main():
     try:
         config = load_config()
@@ -115,7 +137,6 @@ def main():
             print(f"  [Warning] Error reading RSS feed: {feed.bozo_exception}")
             continue
             
-        # فقط اولین آیتم جدید در فید را پردازش می‌کند و متوقف می‌شود
         for entry in reversed(feed.entries):
             item_link = entry.get('link')
             item_title = entry.get('title', 'No Title')
@@ -147,7 +168,7 @@ def main():
                 save_processed_item_to_wp(config, item_link)
             
             print("\n[Debug] Halting after one item for testing.")
-            break # <-- مهم: پس از پردازش یک آیتم، حلقه متوقف می‌شود
+            break
 
     print("\n--- Script finished. ---")
 
